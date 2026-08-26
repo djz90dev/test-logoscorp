@@ -18,7 +18,7 @@ export async function fetchUsers(): Promise<{ data: User[] }> {
   return handleResponse<{ data: User[] }>(response);
 }
 
-export async function syncUser(user: User): Promise<{ success: boolean; data?: { contactId: string; message: string }; error?: ApiError }> {
+export async function syncUser(user: User): Promise<{ success: boolean; data?: { contactId: string; operation?: string; sourceId?: number; message: string }; error?: ApiError }> {
   const response = await fetch(`${API_BASE}/contacts/sync`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

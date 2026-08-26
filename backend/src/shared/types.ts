@@ -22,6 +22,8 @@ export interface SyncResult {
   userId: number;
   success: boolean;
   contactId?: string;
+  operation?: SyncOperation;
+  sourceId?: number;
   error?: {
     message: string;
     code: string;
@@ -42,9 +44,12 @@ export interface ZohoContact {
   Email: string;
   Phone: string;
   Account_Name?: string;
+  Source_Id__c?: string;
 }
 
-export interface ZohoCreateResponse {
+export type SyncOperation = 'created' | 'updated';
+
+export interface ZohoUpsertResponse {
   data: Array<{
     code: number;
     message: string;

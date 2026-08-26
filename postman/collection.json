@@ -68,7 +68,7 @@
                 }
               }
             },
-            "description": "Sincroniza un contacto válido con Zoho CRM.\n\nEsperado (éxito): 200\n{\n  \"success\": true,\n  \"data\": {\n    \"contactId\": \"...\",\n    \"message\": \"Contact synced successfully\"\n  }\n}\n\nEsperado (duplicado en Zoho): 400\n{\n  \"success\": false,\n  \"error\": {\n    \"message\": \"El contacto ya existe en Zoho CRM\",\n    \"code\": \"CONTACT_ALREADY_EXISTS\",\n    \"details\": {\n      \"field\": \"Email\",\n      \"existingRecordId\": \"...\"\n    }\n  }\n}\n\nNota: isValidCompany se calcula por el backend (no se envía). El campo NO afecta el sync."
+            "description": "Sincroniza un contacto válido con Zoho CRM (Upsert).\n\nEl criterio de identificación es Source_Id__c (ID de JSONPlaceholder).\n\nSi Source_Id__c no existe → CREATE.\nSi Source_Id__c existe → UPDATE.\n\nEsperado (éxito - created): 200\n{\n  \"success\": true,\n  \"data\": {\n    \"contactId\": \"...\",\n    \"operation\": \"created\",\n    \"sourceId\": 1,\n    \"message\": \"Contact created successfully\"\n  }\n}\n\nEsperado (éxito - updated): 200\n{\n  \"success\": true,\n  \"data\": {\n    \"contactId\": \"...\",\n    \"operation\": \"updated\",\n    \"sourceId\": 1,\n    \"message\": \"Contact updated successfully\"\n  }\n}\n\nEsperado (conflicto): 400\n{\n  \"success\": false,\n  \"error\": {\n    \"message\": \"El contacto ya existe en Zoho CRM (duplicado por otro campo)\",\n    \"code\": \"CONTACT_ALREADY_EXISTS\",\n    \"details\": {\n      \"field\": \"Email\",\n      \"existingRecordId\": \"...\"\n    }\n  }\n}"
           }
         },
         {
@@ -165,7 +165,7 @@
                 }
               }
             },
-            "description": "Sincronización masiva mixta: 2 válidos + 1 error simulado (Clementine).\n\nCada registro se procesa independientemente.\n\nEsperado: 200\n{\n  \"total\": 3,\n  \"successful\": 2,\n  \"failed\": 1,\n  \"results\": [\n    {\n      \"userId\": 1,\n      \"success\": true,\n      \"contactId\": \"...\"\n    },\n    {\n      \"userId\": 2,\n      \"success\": false,\n      \"error\": {\n        \"message\": \"Simulated error: username starts with C\",\n        \"code\": \"SIMULATED_ERROR\"\n      }\n    },\n    {\n      \"userId\": 3,\n      \"success\": true,\n      \"contactId\": \"...\"\n    }\n  ]\n}\n\nEl fallo de un registro NO detiene el procesamiento de los demás."
+            "description": "Sincronización masiva mixta: 2 válidos + 1 error simulado (Clementine).\n\nCada registro se procesa independientemente. Upsert por Source_Id__c.\n\nEsperado: 200\n{\n  \"total\": 3,\n  \"successful\": 2,\n  \"failed\": 1,\n  \"results\": [\n    {\n      \"userId\": 1,\n      \"success\": true,\n      \"contactId\": \"...\",\n      \"operation\": \"created\",\n      \"sourceId\": 1\n    },\n    {\n      \"userId\": 2,\n      \"success\": false,\n      \"sourceId\": 2,\n      \"error\": {\n        \"message\": \"Simulated error: username starts with C\",\n        \"code\": \"SIMULATED_ERROR\"\n      }\n    },\n    {\n      \"userId\": 3,\n      \"success\": true,\n      \"contactId\": \"...\",\n      \"operation\": \"created\",\n      \"sourceId\": 3\n    }\n  ]\n}\n\nEl fallo de un registro NO detiene el procesamiento de los demás."
           }
         },
         {

@@ -21,6 +21,8 @@ export interface SyncResult {
   userId: number;
   success: boolean;
   contactId?: string;
+  operation?: 'created' | 'updated';
+  sourceId?: number;
   error?: {
     message: string;
     code: string;

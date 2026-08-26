@@ -88,7 +88,7 @@ export function BulkSyncDialog({
                     )}
                   </ListItemIcon>
                   <ListItemText
-                    primary={`Usuario #${r.userId}`}
+                    primary={`Usuario #${r.userId} · ${r.operation === 'updated' ? 'Actualizado' : r.operation === 'created' ? 'Creado' : ''}`}
                     secondary={r.error?.message || 'Sincronizado correctamente'}
                   />
                 </ListItem>

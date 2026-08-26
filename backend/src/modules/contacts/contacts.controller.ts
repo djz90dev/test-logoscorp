@@ -26,7 +26,11 @@ export class ContactsController {
           success: true,
           data: {
             contactId: result.contactId,
-            message: 'Contact synced successfully',
+            operation: result.operation,
+            sourceId: result.sourceId,
+            message: result.operation === 'updated'
+              ? 'Contact updated successfully'
+              : 'Contact created successfully',
           },
         });
       } else {

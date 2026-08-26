@@ -2,10 +2,15 @@ import { useState, useCallback } from 'react';
 import { syncUser } from '../services/api';
 import type { User } from '../types';
 
+function getSyncSuccessMessage(operation?: string): string {
+  if (operation === 'updated') return 'Contacto actualizado en Zoho CRM.';
+  return 'Contacto creado en Zoho CRM.';
+}
+
 function getSyncErrorMessage(errorCode: string): string {
   switch (errorCode) {
     case 'CONTACT_ALREADY_EXISTS':
-      return 'El contacto ya existe en Zoho CRM.';
+      return 'Conflicto: el contacto ya existe por otro campo.';
     case 'SIMULATED_ERROR':
       return 'No se pudo sincronizar este contacto.';
     default:
@@ -29,7 +34,7 @@ export function useSyncUser() {
         setFeedback({
           open: true,
           severity: 'success',
-          message: 'Contacto enviado correctamente a Zoho CRM.',
+          message: getSyncSuccessMessage(result.data?.operation),
         });
       } else {
         const errorCode = result.error?.code || 'UNKNOWN';

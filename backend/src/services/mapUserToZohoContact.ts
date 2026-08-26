@@ -21,6 +21,7 @@ export function mapUserToZohoContact(user: JsonPlaceholdeUser): ZohoContact {
     Last_Name: lastName,
     Email: user.email,
     Phone: user.phone.replace(/[^0-9]/g, ''),
+    Source_Id__c: String(user.id),
   };
 
   if (firstName) {

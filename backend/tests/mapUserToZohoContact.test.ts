@@ -29,7 +29,13 @@ describe('mapUserToZohoContact', () => {
       Email: 'leanne@example.com',
       Phone: '17707368031',
       Account_Name: 'Acme Group',
+      Source_Id__c: '1',
     });
+  });
+
+  it('sets Source_Id__c to string of user.id', () => {
+    const result = mapUserToZohoContact(makeUser({ id: 42 }));
+    expect(result.Source_Id__c).toBe('42');
   });
 
   it('handles single name (no space)', () => {
@@ -102,5 +108,12 @@ describe('mapUserToZohoContact', () => {
     expect(payload.data[0].Last_Name).toBeTruthy();
     expect(payload.data[0].Email).toBeTruthy();
     expect(payload.data[0].Phone).toBeTruthy();
+    expect(payload.data[0].Source_Id__c).toBeTruthy();
+  });
+
+  it('preserves Source_Id__c as string for all id types', () => {
+    expect(mapUserToZohoContact(makeUser({ id: 0 })).Source_Id__c).toBe('0');
+    expect(mapUserToZohoContact(makeUser({ id: 999 })).Source_Id__c).toBe('999');
+    expect(mapUserToZohoContact(makeUser({ id: 1000 })).Source_Id__c).toBe('1000');
   });
 });

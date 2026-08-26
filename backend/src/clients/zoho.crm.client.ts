@@ -1,7 +1,7 @@
 import { config } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { ZohoApiError } from '../shared/types.js';
-import type { ZohoContact, ZohoCreateResponse } from '../shared/types.js';
+import type { ZohoContact, ZohoUpsertResponse } from '../shared/types.js';
 
 export class ZohoCRMClient {
   private baseUrl: string;
@@ -12,16 +12,16 @@ export class ZohoCRMClient {
     this.timeout = 30000;
   }
 
-  async createContact(
+  async upsertContact(
     contact: ZohoContact,
     accessToken: string
-  ): Promise<ZohoCreateResponse> {
-    const url = `${this.baseUrl}/Contacts`;
+  ): Promise<ZohoUpsertResponse> {
+    const url = `${this.baseUrl}/Contacts/upsert`;
     const payload = { data: [contact] };
 
     logger.info(
-      { url, payload },
-      'Creating contact in Zoho CRM'
+      { url, sourceId: contact.Source_Id__c },
+      'Upserting contact in Zoho CRM'
     );
 
     const controller = new AbortController();
@@ -65,10 +65,10 @@ export class ZohoCRMClient {
         );
       }
 
-      const data = (await response.json()) as ZohoCreateResponse;
+      const data = (await response.json()) as ZohoUpsertResponse;
       logger.info(
-        { contactId: data.data?.[0]?.details?.id },
-        'Contact created in Zoho CRM'
+        { contactId: data.data?.[0]?.details?.id, status: data.data?.[0]?.status },
+        'Contact upserted in Zoho CRM'
       );
       return data;
     } catch (error) {

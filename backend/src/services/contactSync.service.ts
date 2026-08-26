@@ -5,6 +5,7 @@ import { ZohoApiError } from '../shared/types.js';
 import type {
   JsonPlaceholdeUser,
   SyncResult,
+  SyncOperation,
   BulkSyncResult,
 } from '../shared/types.js';
 
@@ -28,6 +29,12 @@ function isDuplicateData(zohoBody: unknown): zohoBody is ZohoErrorBody {
   );
 }
 
+function detectOperation(zohoMessage: string): SyncOperation {
+  const lower = zohoMessage.toLowerCase();
+  if (lower.includes('updated')) return 'updated';
+  return 'created';
+}
+
 export class ContactSyncService {
   private zohoCRMClient: ZohoCRMClient;
 
@@ -43,6 +50,7 @@ export class ContactSyncService {
       return {
         userId: user.id,
         success: false,
+        sourceId: user.id,
         error: {
           message: 'Simulated error: username starts with C',
           code: 'SIMULATED_ERROR',
@@ -52,26 +60,32 @@ export class ContactSyncService {
 
     try {
       const zohoContact = mapUserToZohoContact(user);
-      const response = await this.zohoCRMClient.createContact(
+      const response = await this.zohoCRMClient.upsertContact(
         zohoContact,
         accessToken
       );
 
+      const record = response.data?.[0];
+      const operation = detectOperation(record?.message || '');
+
       return {
         userId: user.id,
         success: true,
-        contactId: response.data?.[0]?.details?.id,
+        contactId: record?.details?.id,
+        operation,
+        sourceId: user.id,
       };
     } catch (error) {
       if (error instanceof ZohoApiError && isDuplicateData(error.zohoBody)) {
         return {
           userId: user.id,
           success: false,
+          sourceId: user.id,
           error: {
-            message: 'El contacto ya existe en Zoho CRM',
+            message: 'El contacto ya existe en Zoho CRM (duplicado por otro campo)',
             code: 'CONTACT_ALREADY_EXISTS',
             details: {
-              field: error.zohoBody.details?.api_name || 'Email',
+              field: error.zohoBody.details?.api_name || 'Unknown',
               existingRecordId: error.zohoBody.details?.duplicate_record?.id || '',
             },
           },
@@ -82,6 +96,7 @@ export class ContactSyncService {
       return {
         userId: user.id,
         success: false,
+        sourceId: user.id,
         error: {
           message: error instanceof Error ? error.message : 'Unknown error',
           code: 'ZOHO_API_ERROR',

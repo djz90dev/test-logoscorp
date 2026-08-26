@@ -95,9 +95,9 @@ Vite Dev Server  ──proxy /api──▶  Backend (localhost:3000)
                                   ContactSyncService
                                         │
                           ┌─────────────┼─────────────┐
-                          ▼             ▼             ▼
-                   JSONPlaceholder  ZohoAuthClient  ZohoCRMClient
-                     (GET users)    (OAuth2 token)  (CRUD contacts)
+                           ▼             ▼             ▼
+                    JSONPlaceholder  ZohoAuthClient  ZohoCRMClient
+                      (GET users)    (OAuth2 token)  (Upsert contacts)
 ```
 
 ### CORS
@@ -176,6 +176,37 @@ normalization.ts
 | Website | Agregar `https://` si no tiene protocolo | `hildegard.org` → `https://hildegard.org` |
 | Company | `isValidCompany: true` si `company.name` contiene `Group`, `Inc.` o `LLC` | `Romaguera-Crona` → `false` |
 
+### Sincronización (Upsert)
+
+La sincronización utiliza **Upsert** de Zoho CRM. El criterio de identificación es el **ID de origen** (`user.id` de JSONPlaceholder), mapeado al campo `Source_Id__c` en Zoho.
+
+```
+JSONPlaceholder user.id (ej: 5)
+        ↓
+mapUserToZohoContact() → Source_Id__c: "5"
+        ↓
+ZohoCRMClient.upsertContact() → POST /Contacts/upsert
+        ↓
+si Source_Id__c no existe → CREATE (operation: "created")
+si Source_Id__c existe    → UPDATE (operation: "updated")
+```
+
+**Endpoint:** `POST ${ZOHO_API_BASE_URL}/Contacts/upsert`
+
+**Payload:**
+```json
+{
+  "data": [{
+    "First_Name": "Leanne",
+    "Last_Name": "Graham",
+    "Email": "Sincere@april.biz",
+    "Phone": "17707368031",
+    "Account_Name": "Romaguera-Crona",
+    "Source_Id__c": "1"
+  }]
+}
+```
+
 ### Sincronización individual
 
 ```
@@ -189,11 +220,11 @@ ContactSyncService.syncOne()
     │               (NO se envía nada a Zoho)
     │
     └── NO → mapUserToZohoContact(user)
-              │
+              │  (incluye Source_Id__c: String(user.id))
               ▼
-         ZohoCRMClient.createContact()
+         ZohoCRMClient.upsertContact() → POST /Contacts/upsert
               │
-              ├── Éxito → { success: true, contactId }
+              ├── Éxito → { success: true, contactId, operation: "created"|"updated" }
               ├── DUPLICATE_DATA → { success: false, code: "CONTACT_ALREADY_EXISTS" }
               └── Otro error → { success: false, code: "ZOHO_API_ERROR" }
 ```
@@ -214,11 +245,25 @@ for (user of users) → syncOne(user)  // cada uno independiente
   total: N,
   successful: X,
   failed: Y,
-  results: [ { userId, success, contactId?, error? }, ... ]
+  results: [ { userId, success, contactId?, operation?, sourceId?, error? }, ... ]
 }
 ```
 
 **Resiliencia**: un fallo individual NO detiene el procesamiento de los demás contactos.
+
+### Configuración requerida en Zoho CRM
+
+El campo `Source_Id__c` debe existir en el módulo **Contacts** de Zoho CRM como **External ID**:
+
+| Propiedad | Valor |
+|-----------|-------|
+| Module | Contacts |
+| Field Type | Text |
+| Label | Source ID |
+| API Name | `Source_Id__c` |
+| External ID | Sí |
+
+Sin este campo configurado, el upsert no funcionará correctamente.
 
 ## Lógica reutilizable
 
@@ -233,7 +278,7 @@ No hay lógica duplicada. No hay rutas paralelas.
 | Escenario | Comportamiento |
 |-----------|---------------|
 | Username con "C" | Error simulado. No se llama a Zoho. Retorna `SIMULATED_ERROR`. |
-| Contacto ya existe en Zoho | Zoho retorna `DUPLICATE_DATA`. Se retorna `CONTACT_ALREADY_EXISTS` con `field` y `existingRecordId`. |
+| Source_Id__c duplicado por otro campo | Zoho retorna `DUPLICATE_DATA`. Se retorna `CONTACT_ALREADY_EXISTS` como conflicto. |
 | Error de Zoho | Se retorna `ZOHO_API_ERROR` con el body del error. |
 | Fallo en bulk | Cada contacto produce su propio resultado. Un fallo no afecta a los demás. |
 | Validación de input | Zod rechaza el request. Retorna `VALIDATION_ERROR` con detalles por campo. |
@@ -249,7 +294,7 @@ No hay lógica duplicada. No hay rutas paralelas.
 ## Testing
 
 ```bash
-# Backend — 53 tests
+# Backend — 59 tests
 cd backend && npm test
 
 # Frontend — 27 tests
@@ -264,8 +309,8 @@ cd frontend && npm test
 | Normalización website | 6 | `backend/tests/website.test.ts` |
 | Validación company | 6 | `backend/tests/company.test.ts` |
 | Error simulado | 6 | `backend/tests/simulateError.test.ts` |
-| Sync individual + bulk | 10 | `backend/tests/contactSync.test.ts` |
-| Map user → Zoho | 10 | `backend/tests/mapUserToZohoContact.test.ts` |
+| Sync individual + bulk (upsert) | 14 | `backend/tests/contactSync.test.ts` |
+| Map user → Zoho (Source_Id__c) | 12 | `backend/tests/mapUserToZohoContact.test.ts` |
 | Validación inputs | 6 | `backend/tests/validation.test.ts` |
 | isValidCompany (frontend) | 6 | `frontend/src/utils/isValidCompany.test.ts` |
 | UserTable (frontend) | 10 | `frontend/src/components/UserTable.test.tsx` |
