@@ -1,0 +1,243 @@
+{
+  "info": {
+    "name": "Zoho Contact Sync API",
+    "description": "Backend API para sincronización de contactos con Zoho CRM\n\nBase: http://localhost:3000\n\nEndpoints:\n- GET /health → health check\n- GET /ready → readiness (JSONPlaceholder + Zoho)\n- GET /api/users → usuarios normalizados\n- POST /api/contacts/sync → sync individual\n- POST /api/contacts/sync-bulk → sync masivo",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health & Readiness",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health",
+            "description": "Health check del servidor.\n\nEsperado: 200\n{\n  \"status\": \"ok\",\n  \"timestamp\": \"2026-08-26T...\"\n}"
+          }
+        },
+        {
+          "name": "Readiness Check",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/ready",
+            "description": "Verifica conexiones con JSONPlaceholder y Zoho CRM.\n\nEsperado (todo OK): 200\n{\n  \"status\": \"ready\",\n  \"services\": {\n    \"jsonplaceholder\": \"connected\",\n    \"zoho\": \"authenticated\"\n  }\n}\n\nSi Zoho no está configurado: 503 con \"zoho\": \"unauthorized\""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get All Users",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/users",
+            "description": "Obtiene la lista de usuarios normalizados desde JSONPlaceholder.\n\nEsperado: 200\n{\n  \"data\": [\n    {\n      \"id\": 1,\n      \"name\": \"Leanne Graham\",\n      \"username\": \"Bret\",\n      \"email\": \"Sincere@april.biz\",\n      \"phone\": \"1-770-736-803164\",\n      \"website\": \"hildegard.org\",\n      \"company\": { \"name\": \"Romaguera-Crona\", ... },\n      \"normalizedPhone\": \"1770736803164\",\n      \"normalizedWebsite\": \"https://hildegard.org\",\n      \"isValidCompany\": true\n    },\n    ...\n  ]\n}\n\nCampos normalizados:\n- normalizedPhone: solo dígitos\n- normalizedWebsite: siempre https://\n- isValidCompany: true si company.name contiene Group/Inc./LLC"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Contacts - Sync Individual",
+      "item": [
+        {
+          "name": "Sync Individual - Valid User",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/contacts/sync",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user\": {\n    \"id\": 1,\n    \"name\": \"Leanne Graham\",\n    \"username\": \"Bret\",\n    \"email\": \"Sincere@april.biz\",\n    \"phone\": \"1-770-736-8031\",\n    \"website\": \"hildegard.org\",\n    \"company\": {\n      \"name\": \"Romaguera-Crona\",\n      \"catchPhrase\": \"Multi-layered client-server neural-net\",\n      \"bs\": \"harness real-time e-markets\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Sincroniza un contacto válido con Zoho CRM.\n\nEsperado (éxito): 200\n{\n  \"success\": true,\n  \"data\": {\n    \"contactId\": \"...\",\n    \"message\": \"Contact synced successfully\"\n  }\n}\n\nEsperado (duplicado en Zoho): 400\n{\n  \"success\": false,\n  \"error\": {\n    \"message\": \"El contacto ya existe en Zoho CRM\",\n    \"code\": \"CONTACT_ALREADY_EXISTS\",\n    \"details\": {\n      \"field\": \"Email\",\n      \"existingRecordId\": \"...\"\n    }\n  }\n}\n\nNota: isValidCompany se calcula por el backend (no se envía). El campo NO afecta el sync."
+          }
+        },
+        {
+          "name": "Sync Individual - Simulated Error",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/contacts/sync",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user\": {\n    \"id\": 2,\n    \"name\": \"Clementine Bauch\",\n    \"username\": \"Clementine\",\n    \"email\": \"Nathan@yesenia.net\",\n    \"phone\": \"1-463-123-4447\",\n    \"website\": \"ramiro.info\",\n    \"company\": {\n      \"name\": \"Deckow-Crist\",\n      \"catchPhrase\": \"Proactive didactic contingency\",\n      \"bs\": \"synergize scalable supply-chains\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Username 'Clementine' empieza con 'C' → error simulado.\n\nNO se envía nada a Zoho.\n\nEsperado: 400\n{\n  \"success\": false,\n  \"error\": {\n    \"message\": \"Simulated error: username starts with C\",\n    \"code\": \"SIMULATED_ERROR\"\n  }\n}"
+          }
+        },
+        {
+          "name": "Sync Individual - Validation Error",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/contacts/sync",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Sin campo 'user' → error de validación Zod.\n\nEsperado: 422\n{\n  \"success\": false,\n  \"error\": {\n    \"message\": \"Validation failed\",\n    \"code\": \"VALIDATION_ERROR\",\n    \"details\": [\n      {\n        \"field\": \"user\",\n        \"message\": \"Required\"\n      }\n    ]\n  }\n}"
+          }
+        },
+        {
+          "name": "Sync Individual - Invalid Email",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/contacts/sync",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user\": {\n    \"id\": 1,\n    \"name\": \"Test User\",\n    \"username\": \"test\",\n    \"email\": \"not-an-email\",\n    \"phone\": \"123456\",\n    \"website\": \"test.com\",\n    \"company\": {\n      \"name\": \"Test Inc.\",\n      \"catchPhrase\": \"test\",\n      \"bs\": \"test\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Email inválido → error de validación Zod.\n\nEsperado: 422\n{\n  \"success\": false,\n  \"error\": {\n    \"message\": \"Validation failed\",\n    \"code\": \"VALIDATION_ERROR\",\n    \"details\": [\n      {\n        \"field\": \"user.email\",\n        \"message\": \"Invalid email\"\n      }\n    ]\n  }\n}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Contacts - Sync Bulk",
+      "item": [
+        {
+          "name": "Sync Bulk - Mixed (Valid + Simulated Error)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/contacts/sync-bulk",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"users\": [\n    {\n      \"id\": 1,\n      \"name\": \"Leanne Graham\",\n      \"username\": \"Bret\",\n      \"email\": \"Sincere@april.biz\",\n      \"phone\": \"1-770-736-8031\",\n      \"website\": \"hildegard.org\",\n      \"company\": {\n        \"name\": \"Romaguera-Crona\",\n        \"catchPhrase\": \"Multi-layered client-server neural-net\",\n        \"bs\": \"harness real-time e-markets\"\n      }\n    },\n    {\n      \"id\": 2,\n      \"name\": \"Clementine Bauch\",\n      \"username\": \"Clementine\",\n      \"email\": \"Nathan@yesenia.net\",\n      \"phone\": \"1-463-123-4447\",\n      \"website\": \"ramiro.info\",\n      \"company\": {\n        \"name\": \"Deckow-Crist\",\n        \"catchPhrase\": \"Proactive didactic contingency\",\n        \"bs\": \"synergize scalable supply-chains\"\n      }\n    },\n    {\n      \"id\": 3,\n      \"name\": \"Patricia Lebsack\",\n      \"username\": \"Karianne\",\n      \"email\": \"Julianne.OConner@kory.org\",\n      \"phone\": \"1-313-548-1234\",\n      \"website\": \"kale.biz\",\n      \"company\": {\n        \"name\": \"Robel-Corkery\",\n        \"catchPhrase\": \"Centralized empowering task-force\",\n        \"bs\": \"transition cutting-edge web services\"\n      }\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Sincronización masiva mixta: 2 válidos + 1 error simulado (Clementine).\n\nCada registro se procesa independientemente.\n\nEsperado: 200\n{\n  \"total\": 3,\n  \"successful\": 2,\n  \"failed\": 1,\n  \"results\": [\n    {\n      \"userId\": 1,\n      \"success\": true,\n      \"contactId\": \"...\"\n    },\n    {\n      \"userId\": 2,\n      \"success\": false,\n      \"error\": {\n        \"message\": \"Simulated error: username starts with C\",\n        \"code\": \"SIMULATED_ERROR\"\n      }\n    },\n    {\n      \"userId\": 3,\n      \"success\": true,\n      \"contactId\": \"...\"\n    }\n  ]\n}\n\nEl fallo de un registro NO detiene el procesamiento de los demás."
+          }
+        },
+        {
+          "name": "Sync Bulk - All Simulated Errors",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/contacts/sync-bulk",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"users\": [\n    {\n      \"id\": 10,\n      \"name\": \"Charles de Gaulle\",\n      \"username\": \"Charles\",\n      \"email\": \"charles@test.com\",\n      \"phone\": \"1234567890\",\n      \"website\": \"charles.com\",\n      \"company\": {\n        \"name\": \"Test Group\",\n        \"catchPhrase\": \"test\",\n        \"bs\": \"test\"\n      }\n    },\n    {\n      \"id\": 11,\n      \"name\": \"Carmen Sandiego\",\n      \"username\": \"Carmen\",\n      \"email\": \"carmen@test.com\",\n      \"phone\": \"0987654321\",\n      \"website\": \"carmen.com\",\n      \"company\": {\n        \"name\": \"Test Inc.\",\n        \"catchPhrase\": \"test\",\n        \"bs\": \"test\"\n      }\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Todos los usernames empiezan con 'C' → todos fallan por error simulado.\n\nNinguno se envía a Zoho.\n\nEsperado: 200\n{\n  \"total\": 2,\n  \"successful\": 0,\n  \"failed\": 2,\n  \"results\": [\n    {\n      \"userId\": 10,\n      \"success\": false,\n      \"error\": {\n        \"message\": \"Simulated error: username starts with C\",\n        \"code\": \"SIMULATED_ERROR\"\n      }\n    },\n    {\n      \"userId\": 11,\n      \"success\": false,\n      \"error\": {\n        \"message\": \"Simulated error: username starts with C\",\n        \"code\": \"SIMULATED_ERROR\"\n      }\n    }\n  ]\n}"
+          }
+        },
+        {
+          "name": "Sync Bulk - Empty Array",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/contacts/sync-bulk",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"users\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Array vacío → error de validación.\n\nEsperado: 422\n{\n  \"success\": false,\n  \"error\": {\n    \"message\": \"Validation failed\",\n    \"code\": \"VALIDATION_ERROR\",\n    \"details\": [\n      {\n        \"field\": \"users\",\n        \"message\": \"At least one user is required\"\n      }\n    ]\n  }\n}"
+          }
+        },
+        {
+          "name": "Sync Bulk - Missing Users Field",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/contacts/sync-bulk",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Sin campo 'users' → error de validación.\n\nEsperado: 422\n{\n  \"success\": false,\n  \"error\": {\n    \"message\": \"Validation failed\",\n    \"code\": \"VALIDATION_ERROR\",\n    \"details\": [\n      {\n        \"field\": \"users\",\n        \"message\": \"Required\"\n      }\n    ]\n  }\n}"
+          }
+        }
+      ]
+    }
+  ]
+}

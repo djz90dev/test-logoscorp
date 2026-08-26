@@ -1,5 +1,6 @@
 import { config } from '../config/env.js';
 import { logger } from '../config/logger.js';
+import { ZohoApiError } from '../shared/types.js';
 import type { ZohoContact, ZohoCreateResponse } from '../shared/types.js';
 
 export class ZohoCRMClient {
@@ -16,7 +17,12 @@ export class ZohoCRMClient {
     accessToken: string
   ): Promise<ZohoCreateResponse> {
     const url = `${this.baseUrl}/Contacts`;
-    logger.info({ url }, 'Creating contact in Zoho CRM');
+    const payload = { data: [contact] };
+
+    logger.info(
+      { url, payload },
+      'Creating contact in Zoho CRM'
+    );
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
@@ -28,19 +34,35 @@ export class ZohoCRMClient {
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ data: [contact] }),
+        body: JSON.stringify(payload),
         signal: controller.signal,
       });
 
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const errorText = await response.text();
+        let zohoBody: unknown;
+        try {
+          zohoBody = await response.json();
+        } catch {
+          zohoBody = await response.text();
+        }
+
         logger.error(
-          { status: response.status, body: errorText },
+          {
+            status: response.status,
+            endpoint: url,
+            zohoBody,
+          },
           'Zoho CRM API error'
         );
-        throw new Error(`ZOHO_API_ERROR: ${response.status}`);
+
+        throw new ZohoApiError(
+          `ZOHO_API_ERROR: ${response.status}`,
+          response.status,
+          zohoBody,
+          url
+        );
       }
 
       const data = (await response.json()) as ZohoCreateResponse;

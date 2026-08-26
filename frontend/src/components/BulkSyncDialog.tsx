@@ -55,7 +55,9 @@ export function BulkSyncDialog({
         {result && (
           <Stack spacing={2}>
             <Alert severity={result.failed > 0 ? 'warning' : 'success'}>
-              Sincronización completada
+              {result.failed > 0
+                ? `Proceso finalizado: ${result.successful} guardados, ${result.failed} fallido${result.failed > 1 ? 's' : ''}.`
+                : 'Proceso finalizado: todos los contactos se sincronizaron correctamente.'}
             </Alert>
 
             <Stack sx={{ direction: 'row', spacing: 4, justifyContent: 'center', py: 2 }}>

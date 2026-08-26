@@ -45,6 +45,7 @@ export function errorHandler(
           ? 'Internal server error'
           : err.message,
       code,
+      ...(appError.details ? { details: appError.details } : {}),
     },
   });
 }

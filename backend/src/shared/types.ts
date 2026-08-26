@@ -25,6 +25,7 @@ export interface SyncResult {
   error?: {
     message: string;
     code: string;
+    details?: unknown;
   };
 }
 
@@ -36,12 +37,11 @@ export interface BulkSyncResult {
 }
 
 export interface ZohoContact {
-  First_Name: string;
+  First_Name?: string;
   Last_Name: string;
   Email: string;
   Phone: string;
-  Website?: string;
-  Company?: string;
+  Account_Name?: string;
 }
 
 export interface ZohoCreateResponse {
@@ -65,4 +65,16 @@ export interface SyncUserRequest {
 
 export interface SyncBulkRequest {
   users: JsonPlaceholdeUser[];
+}
+
+export class ZohoApiError extends Error {
+  constructor(
+    message: string,
+    public statusCode: number,
+    public zohoBody: unknown,
+    public endpoint: string
+  ) {
+    super(message);
+    this.name = 'ZohoApiError';
+  }
 }

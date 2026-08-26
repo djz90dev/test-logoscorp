@@ -122,6 +122,49 @@ describe('UserTable', () => {
     expect(syncButtons[1]).toBeDisabled();
   });
 
+  it('disables checkbox for invalid users', () => {
+    render(
+      <UserTable
+        users={mockUsers}
+        selectedIds={[]}
+        loading={false}
+        error={null}
+        onSelect={vi.fn()}
+        onEdit={vi.fn()}
+        onSync={vi.fn()}
+        onRetry={vi.fn()}
+      />
+    );
+
+    const checkboxes = screen.getAllByRole('checkbox');
+    expect(checkboxes[0]).not.toBeDisabled();
+    expect(checkboxes[1]).not.toBeDisabled();
+    expect(checkboxes[2]).toBeDisabled();
+  });
+
+  it('select-all does not include invalid users', async () => {
+    const onSelect = vi.fn();
+    const user = userEvent.setup();
+
+    render(
+      <UserTable
+        users={mockUsers}
+        selectedIds={[]}
+        loading={false}
+        error={null}
+        onSelect={onSelect}
+        onEdit={vi.fn()}
+        onSync={vi.fn()}
+        onRetry={vi.fn()}
+      />
+    );
+
+    const selectAll = screen.getAllByRole('checkbox')[0];
+    await user.click(selectAll);
+
+    expect(onSelect).toHaveBeenCalledWith([1]);
+  });
+
   it('calls onSelect when checkbox clicked', async () => {
     const onSelect = vi.fn();
     const user = userEvent.setup();

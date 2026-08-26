@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { fetchUsers } from '../services/api';
+import { isValidCompany } from '../utils/isValidCompany';
 import type { User } from '../types';
 
 export function useUsers() {
@@ -25,5 +26,15 @@ export function useUsers() {
     loadUsers();
   }, [loadUsers]);
 
-  return { users, loading, error, refetch: loadUsers };
+  const updateUser = useCallback((updated: User) => {
+    setUsers((prev) =>
+      prev.map((u) =>
+        u.id === updated.id
+          ? { ...updated, isValidCompany: isValidCompany(updated.company.name) }
+          : u
+      )
+    );
+  }, []);
+
+  return { users, loading, error, refetch: loadUsers, updateUser };
 }

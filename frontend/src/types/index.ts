@@ -24,6 +24,7 @@ export interface SyncResult {
   error?: {
     message: string;
     code: string;
+    details?: unknown;
   };
 }
 

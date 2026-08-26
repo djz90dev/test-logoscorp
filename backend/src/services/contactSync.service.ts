@@ -1,27 +1,31 @@
 import { ZohoCRMClient } from '../clients/zoho.crm.client.js';
 import { shouldSimulateError } from './simulateError.js';
+import { mapUserToZohoContact } from './mapUserToZohoContact.js';
+import { ZohoApiError } from '../shared/types.js';
 import type {
   JsonPlaceholdeUser,
-  ZohoContact,
   SyncResult,
   BulkSyncResult,
 } from '../shared/types.js';
 
-function toZohoContact(user: JsonPlaceholdeUser): ZohoContact {
-  const nameParts = user.name.split(' ');
-  const firstName = nameParts[0] || '';
-  const lastName = nameParts.slice(1).join(' ');
-
-  return {
-    First_Name: firstName,
-    Last_Name: lastName,
-    Email: user.email,
-    Phone: user.phone.replace(/[^0-9]/g, ''),
-    Website: user.website.startsWith('http')
-      ? user.website
-      : `https://${user.website}`,
-    Company: user.company.name,
+interface ZohoErrorBody {
+  code?: string;
+  message?: string;
+  details?: {
+    api_name?: string;
+    duplicate_record?: {
+      id?: string;
+      module?: { api_name?: string };
+    };
   };
+}
+
+function isDuplicateData(zohoBody: unknown): zohoBody is ZohoErrorBody {
+  return (
+    typeof zohoBody === 'object' &&
+    zohoBody !== null &&
+    (zohoBody as ZohoErrorBody).code === 'DUPLICATE_DATA'
+  );
 }
 
 export class ContactSyncService {
@@ -47,7 +51,7 @@ export class ContactSyncService {
     }
 
     try {
-      const zohoContact = toZohoContact(user);
+      const zohoContact = mapUserToZohoContact(user);
       const response = await this.zohoCRMClient.createContact(
         zohoContact,
         accessToken
@@ -59,12 +63,29 @@ export class ContactSyncService {
         contactId: response.data?.[0]?.details?.id,
       };
     } catch (error) {
+      if (error instanceof ZohoApiError && isDuplicateData(error.zohoBody)) {
+        return {
+          userId: user.id,
+          success: false,
+          error: {
+            message: 'El contacto ya existe en Zoho CRM',
+            code: 'CONTACT_ALREADY_EXISTS',
+            details: {
+              field: error.zohoBody.details?.api_name || 'Email',
+              existingRecordId: error.zohoBody.details?.duplicate_record?.id || '',
+            },
+          },
+        };
+      }
+
+      const details = error instanceof ZohoApiError ? error.zohoBody : undefined;
       return {
         userId: user.id,
         success: false,
         error: {
           message: error instanceof Error ? error.message : 'Unknown error',
           code: 'ZOHO_API_ERROR',
+          details,
         },
       };
     }

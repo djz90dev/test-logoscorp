@@ -17,10 +17,11 @@ import { FeedbackSnackbar } from '../components/FeedbackSnackbar';
 import { useUsers } from '../hooks/useUsers';
 import { useSyncUser } from '../hooks/useSyncUser';
 import { useSyncBulk } from '../hooks/useSyncBulk';
+import { isValidCompany } from '../utils/isValidCompany';
 import type { User } from '../types';
 
 export function UsersPage() {
-  const { users, loading, error, refetch } = useUsers();
+  const { users, loading, error, refetch, updateUser } = useUsers();
   const { feedback, handleSync, closeFeedback } = useSyncUser();
   const { syncing: syncingBulk, result: bulkResult, error: bulkError, handleBulkSync, closeDialog: closeBulkDialog } = useSyncBulk();
 
@@ -35,6 +36,10 @@ export function UsersPage() {
 
   const handleSave = async (user: User) => {
     setEditDialogOpen(false);
+    updateUser(user);
+    if (!isValidCompany(user.company.name)) {
+      setSelectedIds((prev) => prev.filter((id) => id !== user.id));
+    }
     await handleSync(user);
   };
 

@@ -32,9 +32,17 @@ export class ZohoAuthClient {
     );
 
     if (!response.ok) {
-      const errorText = await response.text();
-      logger.error({ status: response.status }, 'Failed to refresh Zoho token');
-      throw new Error(`ZOHO_AUTH_ERROR: ${response.status} - ${errorText}`);
+      let errorBody: unknown;
+      try {
+        errorBody = await response.json();
+      } catch {
+        errorBody = await response.text();
+      }
+      logger.error(
+        { status: response.status, zohoBody: errorBody },
+        'Failed to refresh Zoho token'
+      );
+      throw new Error(`ZOHO_AUTH_ERROR: ${response.status}`);
     }
 
     const data = (await response.json()) as {
