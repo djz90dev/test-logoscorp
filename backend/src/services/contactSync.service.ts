@@ -9,26 +9,6 @@ import type {
   BulkSyncResult,
 } from '../shared/types.js';
 
-interface ZohoErrorBody {
-  code?: string;
-  message?: string;
-  details?: {
-    api_name?: string;
-    duplicate_record?: {
-      id?: string;
-      module?: { api_name?: string };
-    };
-  };
-}
-
-function isDuplicateData(zohoBody: unknown): zohoBody is ZohoErrorBody {
-  return (
-    typeof zohoBody === 'object' &&
-    zohoBody !== null &&
-    (zohoBody as ZohoErrorBody).code === 'DUPLICATE_DATA'
-  );
-}
-
 function detectOperation(zohoMessage: string): SyncOperation {
   const lower = zohoMessage.toLowerCase();
   if (lower.includes('updated')) return 'updated';
@@ -60,8 +40,8 @@ export class ContactSyncService {
 
     try {
       const zohoContact = mapUserToZohoContact(user);
-      const response = await this.zohoCRMClient.upsertContact(
-        zohoContact,
+      const response = await this.zohoCRMClient.upsertContacts(
+        [zohoContact],
         accessToken
       );
 
@@ -76,22 +56,6 @@ export class ContactSyncService {
         sourceId: user.id,
       };
     } catch (error) {
-      if (error instanceof ZohoApiError && isDuplicateData(error.zohoBody)) {
-        return {
-          userId: user.id,
-          success: false,
-          sourceId: user.id,
-          error: {
-            message: 'El contacto ya existe en Zoho CRM (duplicado por otro campo)',
-            code: 'CONTACT_ALREADY_EXISTS',
-            details: {
-              field: error.zohoBody.details?.api_name || 'Unknown',
-              existingRecordId: error.zohoBody.details?.duplicate_record?.id || '',
-            },
-          },
-        };
-      }
-
       const details = error instanceof ZohoApiError ? error.zohoBody : undefined;
       return {
         userId: user.id,
@@ -99,7 +63,7 @@ export class ContactSyncService {
         sourceId: user.id,
         error: {
           message: error instanceof Error ? error.message : 'Unknown error',
-          code: 'ZOHO_API_ERROR',
+          code: error instanceof ZohoApiError ? 'ZOHO_API_ERROR' : 'ZOHO_API_ERROR',
           details,
         },
       };
@@ -112,15 +76,90 @@ export class ContactSyncService {
   ): Promise<BulkSyncResult> {
     const results: SyncResult[] = [];
 
-    for (const user of users) {
-      const result = await this.syncOne(user, accessToken);
-      results.push(result);
+    // Separate simulated errors from valid users
+    const validUsers: { user: JsonPlaceholdeUser; originalIndex: number }[] = [];
+    const simulatedMap = new Map<number, SyncResult>();
+
+    users.forEach((user, index) => {
+      if (shouldSimulateError(user.username)) {
+        simulatedMap.set(index, {
+          userId: user.id,
+          success: false,
+          sourceId: user.id,
+          error: {
+            message: 'Simulated error: username starts with C',
+            code: 'SIMULATED_ERROR',
+          },
+        });
+      } else {
+        validUsers.push({ user, originalIndex: index });
+      }
+    });
+
+    // Single batch API call for all valid users
+    if (validUsers.length > 0) {
+      try {
+        const zohoContacts = validUsers.map(({ user }) =>
+          mapUserToZohoContact(user)
+        );
+        const response = await this.zohoCRMClient.upsertContacts(
+          zohoContacts,
+          accessToken
+        );
+
+        // Map Zoho response back to results (index-based)
+        validUsers.forEach(({ user, originalIndex }, i) => {
+          const record = response.data?.[i];
+
+          if (record?.status === 'error' || (record?.code && record.code !== 0)) {
+            results[originalIndex] = {
+              userId: user.id,
+              success: false,
+              sourceId: user.id,
+              error: {
+                message: record?.message || 'Zoho upsert error',
+                code: 'ZOHO_UPSERT_ERROR',
+                details: record,
+              },
+            };
+          } else {
+            const operation = detectOperation(record?.message || '');
+            results[originalIndex] = {
+              userId: user.id,
+              success: true,
+              contactId: record?.details?.id,
+              operation,
+              sourceId: user.id,
+            };
+          }
+        });
+      } catch (error) {
+        // Network/auth error — all valid users fail
+        const details = error instanceof ZohoApiError ? error.zohoBody : undefined;
+        validUsers.forEach(({ user, originalIndex }) => {
+          results[originalIndex] = {
+            userId: user.id,
+            success: false,
+            sourceId: user.id,
+            error: {
+              message: error instanceof Error ? error.message : 'Unknown error',
+              code: 'ZOHO_API_ERROR',
+              details,
+            },
+          };
+        });
+      }
     }
+
+    // Insert simulated errors at their original positions
+    simulatedMap.forEach((result, originalIndex) => {
+      results[originalIndex] = result;
+    });
 
     return {
       total: users.length,
-      successful: results.filter((r) => r.success).length,
-      failed: results.filter((r) => !r.success).length,
+      successful: results.filter((r) => r?.success).length,
+      failed: results.filter((r) => r && !r.success).length,
       results,
     };
   }

@@ -5,7 +5,7 @@ import type { JsonPlaceholdeUser } from '../src/shared/types.js';
 
 vi.mock('../src/clients/zoho.crm.client.js', () => ({
   ZohoCRMClient: vi.fn().mockImplementation(() => ({
-    upsertContact: vi.fn().mockResolvedValue({
+    upsertContacts: vi.fn().mockResolvedValue({
       data: [{ code: 0, message: 'record added', details: { id: '12345' }, status: 'success' }],
     }),
   })),
@@ -33,24 +33,7 @@ const mockUserC: JsonPlaceholdeUser = {
   username: 'Clementine',
 };
 
-const duplicateError = new ZohoApiError(
-  'ZOHO_API_ERROR: 400',
-  400,
-  {
-    code: 'DUPLICATE_DATA',
-    message: 'duplicate data',
-    details: {
-      api_name: 'Email',
-      duplicate_record: {
-        id: 'existing-record-id-123',
-        module: { api_name: 'Contacts' },
-      },
-    },
-  },
-  'https://www.zohoapis.com/crm/v2/Contacts/upsert'
-);
-
-const unknownZohoError = new ZohoApiError(
+const networkError = new ZohoApiError(
   'ZOHO_API_ERROR: 500',
   500,
   { code: 'INTERNAL_ERROR', message: 'server error' },
@@ -59,13 +42,13 @@ const unknownZohoError = new ZohoApiError(
 
 describe('ContactSyncService', () => {
   let service: ContactSyncService;
-  let mockUpsertContact: ReturnType<typeof vi.fn>;
+  let mockUpsertContacts: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     const MockedZohoCRMClient = vi.mocked(ZohoCRMClient);
     const instance = new MockedZohoCRMClient();
-    mockUpsertContact = instance.upsertContact as ReturnType<typeof vi.fn>;
+    mockUpsertContacts = instance.upsertContacts as ReturnType<typeof vi.fn>;
     service = new ContactSyncService(instance);
   });
 
@@ -78,11 +61,15 @@ describe('ContactSyncService', () => {
       expect(result.sourceId).toBe(1);
       expect(result.contactId).toBe('12345');
       expect(result.operation).toBe('created');
-      expect(mockUpsertContact).toHaveBeenCalledOnce();
+      expect(mockUpsertContacts).toHaveBeenCalledOnce();
+      expect(mockUpsertContacts).toHaveBeenCalledWith(
+        [expect.objectContaining({ Source_Id__c: '1' })],
+        'test-token'
+      );
     });
 
     it('detects updated operation from Zoho response', async () => {
-      mockUpsertContact.mockResolvedValueOnce({
+      mockUpsertContacts.mockResolvedValueOnce({
         data: [{ code: 0, message: 'record updated', details: { id: '99999' }, status: 'success' }],
       });
 
@@ -98,8 +85,8 @@ describe('ContactSyncService', () => {
       const result = await service.syncOne(user5, 'test-token');
 
       expect(result.sourceId).toBe(5);
-      expect(mockUpsertContact).toHaveBeenCalledWith(
-        expect.objectContaining({ Source_Id__c: '5' }),
+      expect(mockUpsertContacts).toHaveBeenCalledWith(
+        [expect.objectContaining({ Source_Id__c: '5' })],
         'test-token'
       );
     });
@@ -111,59 +98,78 @@ describe('ContactSyncService', () => {
       expect(result.error?.code).toBe('SIMULATED_ERROR');
       expect(result.error?.message).toBe('Simulated error: username starts with C');
       expect(result.sourceId).toBe(2);
-      expect(mockUpsertContact).not.toHaveBeenCalled();
+      expect(mockUpsertContacts).not.toHaveBeenCalled();
     });
 
-    it('returns CONTACT_ALREADY_EXISTS for DUPLICATE_DATA', async () => {
-      mockUpsertContact.mockRejectedValueOnce(duplicateError);
-
-      const result = await service.syncOne(mockUser, 'test-token');
-
-      expect(result.success).toBe(false);
-      expect(result.error?.code).toBe('CONTACT_ALREADY_EXISTS');
-      expect(result.sourceId).toBe(1);
-    });
-
-    it('returns ZOHO_API_ERROR for unexpected Zoho errors', async () => {
-      mockUpsertContact.mockRejectedValueOnce(unknownZohoError);
+    it('returns ZOHO_API_ERROR for network errors', async () => {
+      mockUpsertContacts.mockRejectedValueOnce(networkError);
 
       const result = await service.syncOne(mockUser, 'test-token');
 
       expect(result.success).toBe(false);
       expect(result.error?.code).toBe('ZOHO_API_ERROR');
       expect(result.sourceId).toBe(1);
-    });
-
-    it('returns ZOHO_API_ERROR for non-Zoho errors', async () => {
-      mockUpsertContact.mockRejectedValueOnce(new Error('Network timeout'));
-
-      const result = await service.syncOne(mockUser, 'test-token');
-
-      expect(result.success).toBe(false);
-      expect(result.error?.code).toBe('ZOHO_API_ERROR');
-      expect(result.error?.message).toBe('Network timeout');
     });
   });
 
   describe('syncBulk', () => {
-    it('syncs multiple users successfully', async () => {
-      const users = [mockUser, { ...mockUser, id: 3, username: 'Ervin' }];
+    it('makes single batch API call for all valid users', async () => {
+      const users = [
+        mockUser,
+        { ...mockUser, id: 3, username: 'Ervin' },
+        { ...mockUser, id: 4, username: 'Dan' },
+      ];
+
       const result = await service.syncBulk(users, 'test-token');
 
-      expect(result.total).toBe(2);
-      expect(result.successful).toBe(2);
+      expect(result.total).toBe(3);
+      expect(result.successful).toBe(3);
       expect(result.failed).toBe(0);
-      expect(result.results).toHaveLength(2);
+      expect(mockUpsertContacts).toHaveBeenCalledOnce();
+      expect(mockUpsertContacts).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({ Source_Id__c: '1' }),
+          expect.objectContaining({ Source_Id__c: '3' }),
+          expect.objectContaining({ Source_Id__c: '4' }),
+        ],
+        'test-token'
+      );
+    });
+
+    it('filters simulated errors and sends only valid users in batch', async () => {
+      mockUpsertContacts.mockResolvedValueOnce({
+        data: [
+          { code: 0, message: 'record added', details: { id: '111' }, status: 'success' },
+          { code: 0, message: 'record added', details: { id: '333' }, status: 'success' },
+        ],
+      });
+
+      const users = [mockUser, mockUserC, { ...mockUser, id: 3, username: 'Ervin' }];
+      const result = await service.syncBulk(users, 'test-token');
+
+      expect(result.total).toBe(3);
+      expect(result.successful).toBe(2);
+      expect(result.failed).toBe(1);
+      expect(mockUpsertContacts).toHaveBeenCalledOnce();
+      expect(mockUpsertContacts).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({ Source_Id__c: '1' }),
+          expect.objectContaining({ Source_Id__c: '3' }),
+        ],
+        'test-token'
+      );
+      expect(result.results[0].success).toBe(true);
+      expect(result.results[1].error?.code).toBe('SIMULATED_ERROR');
+      expect(result.results[2].success).toBe(true);
     });
 
     it('bulk with mixed created + updated', async () => {
-      mockUpsertContact
-        .mockResolvedValueOnce({
-          data: [{ code: 0, message: 'record added', details: { id: '111' }, status: 'success' }],
-        })
-        .mockResolvedValueOnce({
-          data: [{ code: 0, message: 'record updated', details: { id: '222' }, status: 'success' }],
-        });
+      mockUpsertContacts.mockResolvedValueOnce({
+        data: [
+          { code: 0, message: 'record added', details: { id: '111' }, status: 'success' },
+          { code: 0, message: 'record updated', details: { id: '222' }, status: 'success' },
+        ],
+      });
 
       const users = [mockUser, { ...mockUser, id: 3, username: 'Ervin' }];
       const result = await service.syncBulk(users, 'test-token');
@@ -174,63 +180,14 @@ describe('ContactSyncService', () => {
       expect(result.results[1].operation).toBe('updated');
     });
 
-    it('continues after DUPLICATE_DATA', async () => {
-      mockUpsertContact
-        .mockResolvedValueOnce({
-          data: [{ code: 0, details: { id: '111' }, status: 'success' }],
-        })
-        .mockRejectedValueOnce(duplicateError)
-        .mockResolvedValueOnce({
-          data: [{ code: 0, details: { id: '333' }, status: 'success' }],
-        });
-
-      const users = [
-        mockUser,
-        { ...mockUser, id: 3, username: 'Ervin' },
-        { ...mockUser, id: 4, username: 'Dan' },
-      ];
-
-      const result = await service.syncBulk(users, 'test-token');
-
-      expect(result.total).toBe(3);
-      expect(result.successful).toBe(2);
-      expect(result.failed).toBe(1);
-      expect(result.results[1].error?.code).toBe('CONTACT_ALREADY_EXISTS');
-    });
-
-    it('handles mixed results: success + duplicate + simulated', async () => {
-      mockUpsertContact
-        .mockResolvedValueOnce({
-          data: [{ code: 0, details: { id: '111' }, status: 'success' }],
-        })
-        .mockRejectedValueOnce(duplicateError);
-
-      const users = [
-        mockUser,
-        { ...mockUser, id: 3, username: 'Ervin' },
-        mockUserC,
-      ];
-
-      const result = await service.syncBulk(users, 'test-token');
-
-      expect(result.total).toBe(3);
-      expect(result.successful).toBe(1);
-      expect(result.failed).toBe(2);
-      expect(result.results[0].success).toBe(true);
-      expect(result.results[0].operation).toBe('created');
-      expect(result.results[1].error?.code).toBe('CONTACT_ALREADY_EXISTS');
-      expect(result.results[2].error?.code).toBe('SIMULATED_ERROR');
-    });
-
-    it('error in one record does not stop the rest', async () => {
-      mockUpsertContact
-        .mockResolvedValueOnce({
-          data: [{ code: 0, details: { id: '111' }, status: 'success' }],
-        })
-        .mockRejectedValueOnce(unknownZohoError)
-        .mockResolvedValueOnce({
-          data: [{ code: 0, message: 'record updated', details: { id: '333' }, status: 'success' }],
-        });
+    it('handles per-record errors in batch response', async () => {
+      mockUpsertContacts.mockResolvedValueOnce({
+        data: [
+          { code: 0, message: 'record added', details: { id: '111' }, status: 'success' },
+          { code: 3001, message: 'invalid data', details: {}, status: 'error' },
+          { code: 0, message: 'record updated', details: { id: '333' }, status: 'success' },
+        ],
+      });
 
       const users = [
         mockUser,
@@ -245,12 +202,38 @@ describe('ContactSyncService', () => {
       expect(result.failed).toBe(1);
       expect(result.results[0].success).toBe(true);
       expect(result.results[1].success).toBe(false);
+      expect(result.results[1].error?.code).toBe('ZOHO_UPSERT_ERROR');
       expect(result.results[2].success).toBe(true);
-      expect(result.results[2].operation).toBe('updated');
+    });
+
+    it('network error fails all valid users in batch', async () => {
+      mockUpsertContacts.mockRejectedValueOnce(networkError);
+
+      const users = [mockUser, { ...mockUser, id: 3, username: 'Ervin' }];
+      const result = await service.syncBulk(users, 'test-token');
+
+      expect(result.total).toBe(2);
+      expect(result.successful).toBe(0);
+      expect(result.failed).toBe(2);
+      expect(result.results[0].error?.code).toBe('ZOHO_API_ERROR');
+      expect(result.results[1].error?.code).toBe('ZOHO_API_ERROR');
+    });
+
+    it('network error does not affect simulated errors', async () => {
+      mockUpsertContacts.mockRejectedValueOnce(networkError);
+
+      const users = [mockUser, mockUserC];
+      const result = await service.syncBulk(users, 'test-token');
+
+      expect(result.total).toBe(2);
+      expect(result.successful).toBe(0);
+      expect(result.failed).toBe(2);
+      expect(result.results[0].error?.code).toBe('ZOHO_API_ERROR');
+      expect(result.results[1].error?.code).toBe('SIMULATED_ERROR');
     });
 
     it('same sourceId with different email updates the same contact', async () => {
-      mockUpsertContact.mockResolvedValue({
+      mockUpsertContacts.mockResolvedValue({
         data: [{ code: 0, message: 'record updated', details: { id: '555' }, status: 'success' }],
       });
 
@@ -273,6 +256,20 @@ describe('ContactSyncService', () => {
       expect(result.successful).toBe(0);
       expect(result.failed).toBe(0);
       expect(result.results).toHaveLength(0);
+      expect(mockUpsertContacts).not.toHaveBeenCalled();
+    });
+
+    it('individual and bulk use the same underlying upsert', async () => {
+      mockUpsertContacts.mockResolvedValue({
+        data: [{ code: 0, message: 'record added', details: { id: '999' }, status: 'success' }],
+      });
+
+      await service.syncOne(mockUser, 'test-token');
+      await service.syncBulk([{ ...mockUser, id: 10 }], 'test-token');
+
+      expect(mockUpsertContacts).toHaveBeenCalledTimes(2);
+      expect(mockUpsertContacts.mock.calls[0][0]).toHaveLength(1);
+      expect(mockUpsertContacts.mock.calls[1][0]).toHaveLength(1);
     });
   });
 });

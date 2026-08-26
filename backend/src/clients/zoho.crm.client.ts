@@ -12,16 +12,16 @@ export class ZohoCRMClient {
     this.timeout = 30000;
   }
 
-  async upsertContact(
-    contact: ZohoContact,
+  async upsertContacts(
+    contacts: ZohoContact[],
     accessToken: string
   ): Promise<ZohoUpsertResponse> {
     const url = `${this.baseUrl}/Contacts/upsert`;
-    const payload = { data: [contact] };
+    const payload = { data: contacts };
 
     logger.info(
-      { url, sourceId: contact.Source_Id__c },
-      'Upserting contact in Zoho CRM'
+      { url, count: contacts.length, sourceIds: contacts.map((c) => c.Source_Id__c) },
+      'Batch upserting contacts in Zoho CRM'
     );
 
     const controller = new AbortController();
@@ -67,8 +67,8 @@ export class ZohoCRMClient {
 
       const data = (await response.json()) as ZohoUpsertResponse;
       logger.info(
-        { contactId: data.data?.[0]?.details?.id, status: data.data?.[0]?.status },
-        'Contact upserted in Zoho CRM'
+        { count: data.data?.length },
+        'Batch contacts upserted in Zoho CRM'
       );
       return data;
     } catch (error) {
